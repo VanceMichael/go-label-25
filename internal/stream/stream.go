@@ -12,6 +12,10 @@ type Bus[T any] struct {
 	next        int
 }
 
+type DeliveryGate interface {
+	Prepare(context.Context) error
+}
+
 func New[T any]() *Bus[T] { return &Bus[T]{subscribers: map[int]chan T{}} }
 func (b *Bus[T]) Subscribe(buffer int) (int, <-chan T, error) {
 	if buffer < 1 {
