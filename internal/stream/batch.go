@@ -11,9 +11,9 @@ func (b *Bus[T]) PublishBatch(ctx context.Context, values []T, gate DeliveryGate
 		return domain.ErrInvalid
 	}
 	b.mu.RLock()
-	recipients := make([]chan T, 0, len(b.subscribers))
-	for _, subscriber := range b.subscribers {
-		recipients = append(recipients, subscriber)
+	recipients := make([]subscriber[T], 0, len(b.subscribers))
+	for _, sub := range b.subscribers {
+		recipients = append(recipients, sub)
 	}
 	b.mu.RUnlock()
 	if gate != nil {
@@ -22,9 +22,19 @@ func (b *Bus[T]) PublishBatch(ctx context.Context, values []T, gate DeliveryGate
 		}
 	}
 	for _, value := range values {
-		for _, subscriber := range recipients {
+		for _, sub := range recipients {
+			// A recipient that unsubscribed after the snapshot is signalled
+			// by its closed `done` channel. Skip it without touching its data
+			// channel — which is never closed — so the send cannot panic and a
+			// dead recipient cannot block the rest of the batch.
 			select {
-			case subscriber <- value:
+			case <-sub.done:
+				continue
+			default:
+			}
+			select {
+			case sub.ch <- value:
+			case <-sub.done:
 			case <-ctx.Done():
 				return ctx.Err()
 			}
